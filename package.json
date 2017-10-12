@@ -9,12 +9,14 @@
     "static-sum-type": "^0.10.0"
   },
   "devDependencies": {
+    "browserify": "^14.4.0",
     "budo": "^10.0.4",
     "eslint": "^4.8.0",
     "eslint-plugin-fp": "^2.3.0"
   },
   "scripts": {
     "start": "budo index.js",
+    "build": "browserify src/index.js > bundle.js",
     "test": "node test/test.js"
   },
   "repository": {
