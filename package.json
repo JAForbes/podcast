@@ -1,0 +1,28 @@
+{
+  "name": "podcast",
+  "version": "0.0.0",
+  "description": "",
+  "main": "index.js",
+  "dependencies": {
+    "hickery": "^0.24.0",
+    "mithril": "^1.1.4",
+    "static-sum-type": "^0.10.0"
+  },
+  "devDependencies": {
+    "budo": "^10.0.4"
+  },
+  "scripts": {
+    "start": "budo index.js",
+    "test": "node test/test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JAForbes/podcast.git"
+  },
+  "author": "james.a.forbes@gmail.com <=> (http://james-forbes.com)",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/JAForbes/podcast/issues"
+  },
+  "homepage": "https://github.com/JAForbes/podcast#readme"
+}
