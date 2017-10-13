@@ -5,6 +5,7 @@ const predicated = require('static-sum-type/modules/predicated/dev')
 const T = require('sanctuary-def')
 const toString = require('ramda/src/toString')
 const $ = require('hickery/configs/mithril-immutable')
+const equals = require('ramda/src/equals')
 
 const unless = p => f => g => a => p(a) ? g(a) : f(a)
 
@@ -24,76 +25,122 @@ const ActionIs = type => action => {
     return type.name == action.type
 }
 
-const Feed = {
+
+const FeedInput = {
     init(){
-        return () => Feed.Model.URL({
+        return () => FeedInput.Model.URL({
             url: ''
         })
     }
-
+    
     ,Model:
-        Predicated('Feed.Model', {
+        Predicated('FeedInput.Model', {
             URL: T.test([], T.RecordType({
                 url: T.String
             }))
             ,Loaded: T.test([], T.RecordType({
                 url: T.String
                 ,originalURL: T.String
-                ,xml: T.String
-            }))
-            ,Parsed: T.test([], T.RecordType({
-                url: T.String
-                ,originalURL: T.String
-                ,parsed: T.Any
             }))
         })
 
     ,Action:
-        Predicated('Feed.Action', {
-            URL: T.test([], T.String)
+        Predicated('FeedInput.Action', {
+            URL: T.test([], T.RecordType({
+                url: T.String
+            }))
             ,FETCH: T.test([], T.Any)
-            ,PARSE: T.test([], T.Any) 
         })
 
     ,update: () => model => 
-        unless ( ActionIs (Feed.Action) ) ( () => model ) ( 
-            sst.fold ( Feed.Action ) ({
-                URL: url => Feed.Model.URL({ url })
-                ,FETCH(){
-                    return model
+        unless( ActionIs(FeedInput.Action) ) ( () => model ) ( 
+            sst.fold( FeedInput.Action) ({
+                URL({ url }){
+                    return FeedInput.Model.URL({ url })
                 }
-                ,PARSE(){
-                    return model
-                }
+                ,FETCH: () => model
             })
         )
 
-    ,view: update => model => m(
-        'div'
-        , m('input'
-            , { oninput: 
-                m.withAttr('value', function(value){
-                    update( Feed.Action.URL( value ) )
+    ,effects: {
+        DOM: () => model => 
+            unless( ActionIs(FeedInput.Action) ) ( () => model ) (
+                sst.fold( FeedInput.Action) ({
+                    URL(){}
+                    ,FETCH(){
+            
+                        m.request({
+                            url: 'https://cors.now.sh/'+model.value.url
+                            ,deserialize: i => i
+                            ,method: 'GET'
+                        })
+                            .then(function(response){
+                                
+                                // eslint-disable-next-line fp/no-mutation
+                                Object.assign(model, FeedInput.Model.Loaded({
+                                    url: model.value.url 
+                                    ,originalURL: model.value.url 
+                                }))
+            
+                                actions$( Feed.Action.PARSE(response) )
+                            })
+                    }
                 })
-                ,value: model.value.url
-            }
-        )
-        , m('button', {
-            onclick(){
-                update( Feed.Action.FETCH() )
-            }
-        }, 'Fetch')
-        , model.value.parsed
+            )
+            
+    }
+
+    ,view: update => model => {
+        return m('div'
+            ,m('input'
+                , { oninput: 
+                    m.withAttr('value', function(value){
+                        update( FeedInput.Action.URL( value ) )
+                    })
+                    ,value: model.value.url
+                }
+            )
+            , m('button', {
+                onclick(){
+                    update( FeedInput.Action.FETCH() )
+                }
+            }, 'Fetch')
+        )   
+    }
+
+}
+
+const Feed = {
+    init(){
+        return () => Feed.Model.Empty()
+    }
+
+    ,Model:
+        Predicated('Feed.Model', {
+            Empty: equals(undefined)
+            ,Parsed: T.test([], T.Any)
+        })
+
+    ,Action:
+        Predicated('Feed.Action', {
+            PARSE: T.test([], T.String) 
+        })
+
+    ,update: () => model => () => model
+
+    ,view: () => model => m(
+        'div'
+        , model.case == 'Parsed'
         && [
-            m('a', { href: model.value.parsed.link }
-                ,m('h1', model.value.parsed.title)
+            m('a', { href: model.value.link }
+                ,m('h1', model.value.title)
             )
             ,m('img', { 
-                src: model.value.parsed.itunesImageHref
+                src: model.value.itunesImageHref
                 ,style: { maxWidth: '100px' }
             })
-            ,m('subheading', model.value.parsed.description)
-            ,model.value.parsed.items.map(function(item){
+            ,m('subheading', model.value.description)
+            ,model.value.items.map(function(item){
                 return [
                     m('heading', item.title)
                     ,m('subheading', item.itunesSubtitle)
@@ -109,44 +156,25 @@ const Feed = {
 
                 ]
             })
-            ,m('pre', JSON.stringify(model.value.parsed, null, 2))
+            ,m('pre', JSON.stringify(model, null, 2))
         ]
     )
     
     ,effects: {
-        DOM: actions$ => model => unless ( ActionIs (Feed.Action) ) 
+        DOM: () => model => unless ( ActionIs (Feed.Action) ) 
             ( () => model )
             ( sst.fold (Feed.Action) ({
-                URL(){}
-                ,FETCH(){
-        
-                    m.request({
-                        url: 'https://cors.now.sh/'+model.value.url
-                        ,deserialize: i => i
-                        ,method: 'GET'
-                    })
-                        .then(function(response){
-                            
-                            // eslint-disable-next-line fp/no-mutation
-                            Object.assign(model, Feed.Model.Loaded({
-                                xml: response
-                                ,url: model.value.url 
-                                ,originalURL: model.value.url 
-                            }))
-        
-                            actions$( Feed.Action.PARSE() )
-                        })
-                }
-                ,PARSE(){
+                PARSE(xmlString){
         
                     // eslint-disable-next-line no-undef
                     const xml = new DOMParser().parseFromString(
-                        model.value.xml
+                        xmlString
                             .replace(/itunes:/g, 'itunes_')
                         , 'application/xml'
                     )
                 
-                    const defaultNode = { innerHTML: '', getAttribute: () => '' } 
+                    const defaultNode = 
+                            { innerHTML: '', getAttribute: () => '' } 
                     const xmlItems = Array.from(xml.querySelectorAll('item'))
                 
                     const xmlChannel = xml.querySelector('channel')
@@ -241,11 +269,9 @@ const Feed = {
                     }
                 
                     // eslint-disable-next-line fp/no-mutation
-                    Object.assign(model, Feed.Model.Parsed({
-                        parsed: channel
-                        ,url: model.value.url 
-                        ,originalURL: model.value.url 
-                    }))
+                    Object.assign(model, Feed.Model.Parsed(
+                        channel
+                    ))
                 }
             })
         )
@@ -348,15 +374,13 @@ start(
     actions$
     ,Compose(
         ['DOM']
-        ,[
-            [ $.path(['feed']), $.child.append, Feed ]
+        ,[  [ $.path(['feedInput']), $.child.append, FeedInput ]
+        ,    [ $.path(['feed']), $.child.append, Feed ]
         ]
     )
 )
 .map(
-    ({ view }) => {
-
-        
+    ({ view }) => {        
         // eslint-disable-next-line no-undef
         return m.render( document.body, view )
     }
@@ -365,9 +389,9 @@ start(
 // we don't need attrs
 // we just send messages
 actions$(
-    Feed.Action.URL(
-        'https://feeds.feedburner.com/InterceptedWithJeremyScahill' 
-    )
+    FeedInput.Action.URL({
+        url: 'https://feeds.feedburner.com/InterceptedWithJeremyScahill' 
+    })
 )    
 
 // const domMount = Mount(['DOM'], actions$)
