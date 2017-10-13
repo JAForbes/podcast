@@ -6,6 +6,8 @@
   "dependencies": {
     "hickery": "^0.24.0",
     "mithril": "^1.1.4",
+    "ramda": "^0.25.0",
+    "sanctuary-def": "^0.13.1",
     "static-sum-type": "^0.10.0"
   },
   "devDependencies": {
@@ -15,8 +17,9 @@
     "eslint-plugin-fp": "^2.3.0"
   },
   "scripts": {
-    "start": "budo index.js",
+    "start": "pushd src && budo index.js -lo",
     "build": "browserify src/index.js > bundle.js",
+    "deploy": "now --static --public",
     "test": "node test/test.js"
   },
   "repository": {
