@@ -30,6 +30,7 @@ const FeedInput = {
     init(){
         return () => FeedInput.Model.URL({
             url: ''
+            ,originalURL: ''
         })
     }
     
@@ -37,6 +38,7 @@ const FeedInput = {
         Predicated('FeedInput.Model', {
             URL: T.test([], T.RecordType({
                 url: T.String
+                ,originalURL: T.String
             }))
             ,Loaded: T.test([], T.RecordType({
                 url: T.String
@@ -50,15 +52,30 @@ const FeedInput = {
                 url: T.String
             }))
             ,FETCH: T.test([], T.Any)
+            ,LOADED: T.test([], T.Any)
         })
 
     ,update: () => model => 
         unless( ActionIs(FeedInput.Action) ) ( () => model ) ( 
             sst.fold( FeedInput.Action) ({
                 URL({ url }){
-                    return FeedInput.Model.URL({ url })
+                    return FeedInput.Model.URL({ 
+                        url
+                        , originalURL: model.value.originalURL
+                    })
                 }
-                ,FETCH: () => model
+                ,FETCH: () => {
+                    return FeedInput.Model.URL({ 
+                        url: model.value.url
+                        , originalURL: model.value.url
+                    })
+                }
+                ,LOADED: () => {
+                    return FeedInput.Model.Loaded({
+                        originalURL: model.value.originalURL
+                        ,url: model.value.url
+                    })
+                }
             })
         )
 
@@ -67,6 +84,7 @@ const FeedInput = {
             unless( ActionIs(FeedInput.Action) ) ( () => model ) (
                 sst.fold( FeedInput.Action) ({
                     URL(){}
+                    ,LOADED(){}
                     ,FETCH(){
             
                         m.request({
@@ -161,7 +179,7 @@ const Feed = {
     )
     
     ,effects: {
-        DOM: () => model => unless ( ActionIs (Feed.Action) ) 
+        DOM: update => model => unless ( ActionIs (Feed.Action) ) 
             ( () => model )
             ( sst.fold (Feed.Action) ({
                 PARSE(xmlString){
@@ -272,6 +290,10 @@ const Feed = {
                     Object.assign(model, Feed.Model.Parsed(
                         channel
                     ))
+
+                    update(
+                        FeedInput.Action.LOADED()
+                    )
                 }
             })
         )
