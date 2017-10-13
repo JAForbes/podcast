@@ -4,12 +4,13 @@ const sst = require('static-sum-type/configs/dev/foldThrow.js')
 const predicated = require('static-sum-type/modules/predicated/dev')
 const T = require('sanctuary-def')
 const toString = require('ramda/src/toString')
-const $ = require('hickery/configs/mithril-immutable.js')
+const $ = require('hickery/configs/mithril-immutable')
+const equals = require('ramda/src/equals')
 
 const Predicated = predicated(toString, e => {
     // todo-james create a config in sst
     // todo-james handle non sst errors as part of sst error type: ErrUnknown?
-    if( 'type' in e && e == 'StaticSumTypeError'){
+    if( 'type' in e && e.type == 'StaticSumTypeError'){
         // eslint-disable-next-line fp/no-throw
         throw new TypeError( sst.errMessage(e) )
     } else {
@@ -18,7 +19,7 @@ const Predicated = predicated(toString, e => {
     }
 })
 
-const Feed =
+const Model =
     Predicated('Feed', {
         URL: T.test([], T.RecordType({
             url: T.String
@@ -43,22 +44,19 @@ const Action = Predicated('Action', {
 })
 
 const Feed$getEditableURL = 
-    sst.fold( Feed )({
+    sst.fold( Model )({
         URL: x => x.url
         ,Loaded: x => x.url
         ,Parsed: x => x.url
     })
 
-const Model = (sideEffects, initialModel, actions$) => 
-    stream.scan(function(p, n){
-
-        sideEffects(actions$, p,n)
+function FeedComponent(read$, write){
+        
+    function update(p, n){
 
         return sst.fold( Action ) ({
             URL(){
-                return {
-                    feed: Feed.URL(n.value)
-                }
+                return Model.URL(n.value)
             }
             ,FETCH(){
                 return p
@@ -67,177 +65,174 @@ const Model = (sideEffects, initialModel, actions$) =>
                 return p
             }
         }) ( n )
+    }
 
-    }, initialModel, actions$)
-
-function DOMSideEffects(update, p, n){
+    function DOMSideEffects(p, n){
+        
+        // eslint-disable-next-line fp/no-mutation, no-undef
+        window.state = p
     
-    // eslint-disable-next-line fp/no-mutation, no-undef
-    window.state = p
-
-    return sst.fold( Action ) ({
-        URL(){}
-        ,FETCH(){
-
-            m.request({
-                url: 'https://cors.now.sh/'+p.feed.value.url
-                ,deserialize: i => i
-                ,method: 'GET'
-            })
-                .then(function(response){
-                    
-                    // eslint-disable-next-line fp/no-mutation
-                    p.feed = Feed.Loaded({
-                        xml: response
-                        ,url: p.feed.value.url 
-                        ,originalURL: p.feed.value.url 
-                    })
-
-                    update( Action.PARSE() )
+        return sst.fold( Action ) ({
+            URL(){}
+            ,FETCH(){
+    
+                m.request({
+                    url: 'https://cors.now.sh/'+p.value.url
+                    ,deserialize: i => i
+                    ,method: 'GET'
                 })
-        }
-        ,PARSE(){
-
-            // eslint-disable-next-line no-undef
-            const xml = new DOMParser().parseFromString(
-                p.feed.value.xml
-                    .replace(/itunes:/g, 'itunes_')
-                , 'application/xml'
-            )
-        
-            const defaultNode = { innerHTML: '', getAttribute: () => '' } 
-            const xmlItems = Array.from(xml.querySelectorAll('item'))
-        
-            const xmlChannel = xml.querySelector('channel')
-            
-            const channel = {
-                title: 
-                    ( xmlChannel.querySelector('title') 
-                        || defaultNode
-                    ).innerHTML
-                
-                ,link: 
-                    ( xmlChannel.querySelector('link') 
-                        || defaultNode
-                    ).innerHTML
-                
-                ,language: 
-                    ( xmlChannel.querySelector('language') 
-                        || defaultNode
-                    ).innerHTML
-                
-                ,copyright: 
-                    ( xmlChannel.querySelector('copyright') 
-                        || defaultNode
-                    ).innerHTML
-                
-                ,description: 
-                    ( xmlChannel.querySelector('description') 
-                        || defaultNode
-                    ).innerHTML
-                
-                ,itunesType: 
-                    ( xmlChannel.querySelector('itunes_type') 
-                        || defaultNode
-                    ).innerHTML
-                
-                ,itunesImageHref: 
-                    ( xmlChannel.querySelector('itunes_image') 
-                        || defaultNode
-                    ).getAttribute('href')
-                
-                ,items:
-                    xmlItems.map(function(xml){
-                        return {
-                            title: 
-                                (xml.querySelector('title') 
-                                || defaultNode
-                                ).innerHTML
-                            ,itunesSubtitle: 
-                                (xml.querySelector('itunes_subtitle') 
-                                || defaultNode
-                                ).innerHTML
-                            ,description: 
-                                (xml.querySelector('description') 
-                                || defaultNode
-                                ).innerHTML
-                            ,pubDate: 
-                                (xml.querySelector('pubDate') 
-                                || defaultNode
-                                ).innerHTML
-                            ,itunesAuthor: 
-                                (xml.querySelector('itunes_author') 
-                                || defaultNode
-                                ).innerHTML
-                            ,itunesTitle: 
-                                (xml.querySelector('itunes_title') 
-                                || defaultNode
-                                ).innerHTML
-                            ,itunesDuration: 
-                                (xml.querySelector('itunes_duration') 
-                                || defaultNode
-                                ).innerHTML
-                            ,itunesExplicit: 
-                                (xml.querySelector('itunes_explicit') 
-                                || defaultNode
-                                ).innerHTML
-                            ,enclosure: {
-                                type: 
-                                    (xml.querySelector('enclosure') 
-                                    || defaultNode
-                                    ).getAttribute('type')
-                                ,length: 
-                                    (xml.querySelector('enclosure') 
-                                    || defaultNode
-                                    ).getAttribute('length')
-                                ,url: 
-                                    (xml.querySelector('enclosure') 
-                                    || defaultNode
-                                    ).getAttribute('url')
-                            }
-                        }
+                    .then(function(response){
+                        
+                        // eslint-disable-next-line fp/no-mutation
+                        Object.assign(p, Model.Loaded({
+                            xml: response
+                            ,url: p.value.url 
+                            ,originalURL: p.value.url 
+                        }))
+    
+                        write( Action.PARSE() )
                     })
             }
-        
-            // eslint-disable-next-line fp/no-mutation
-            p.feed = Feed.Parsed({
-                parsed: channel
-                ,url: p.feed.value.url 
-                ,originalURL: p.feed.value.url 
-            })
-        }
-    })( n )
-}
+            ,PARSE(){
+    
+                // eslint-disable-next-line no-undef
+                const xml = new DOMParser().parseFromString(
+                    p.value.xml
+                        .replace(/itunes:/g, 'itunes_')
+                    , 'application/xml'
+                )
+            
+                const defaultNode = { innerHTML: '', getAttribute: () => '' } 
+                const xmlItems = Array.from(xml.querySelectorAll('item'))
+            
+                const xmlChannel = xml.querySelector('channel')
+                
+                const channel = {
+                    title: 
+                        ( xmlChannel.querySelector('title') 
+                            || defaultNode
+                        ).innerHTML
+                    
+                    ,link: 
+                        ( xmlChannel.querySelector('link') 
+                            || defaultNode
+                        ).innerHTML
+                    
+                    ,language: 
+                        ( xmlChannel.querySelector('language') 
+                            || defaultNode
+                        ).innerHTML
+                    
+                    ,copyright: 
+                        ( xmlChannel.querySelector('copyright') 
+                            || defaultNode
+                        ).innerHTML
+                    
+                    ,description: 
+                        ( xmlChannel.querySelector('description') 
+                            || defaultNode
+                        ).innerHTML
+                    
+                    ,itunesType: 
+                        ( xmlChannel.querySelector('itunes_type') 
+                            || defaultNode
+                        ).innerHTML
+                    
+                    ,itunesImageHref: 
+                        ( xmlChannel.querySelector('itunes_image') 
+                            || defaultNode
+                        ).getAttribute('href')
+                    
+                    ,items:
+                        xmlItems.map(function(xml){
+                            return {
+                                title: 
+                                    (xml.querySelector('title') 
+                                    || defaultNode
+                                    ).innerHTML
+                                ,itunesSubtitle: 
+                                    (xml.querySelector('itunes_subtitle') 
+                                    || defaultNode
+                                    ).innerHTML
+                                ,description: 
+                                    (xml.querySelector('description') 
+                                    || defaultNode
+                                    ).innerHTML
+                                ,pubDate: 
+                                    (xml.querySelector('pubDate') 
+                                    || defaultNode
+                                    ).innerHTML
+                                ,itunesAuthor: 
+                                    (xml.querySelector('itunes_author') 
+                                    || defaultNode
+                                    ).innerHTML
+                                ,itunesTitle: 
+                                    (xml.querySelector('itunes_title') 
+                                    || defaultNode
+                                    ).innerHTML
+                                ,itunesDuration: 
+                                    (xml.querySelector('itunes_duration') 
+                                    || defaultNode
+                                    ).innerHTML
+                                ,itunesExplicit: 
+                                    (xml.querySelector('itunes_explicit') 
+                                    || defaultNode
+                                    ).innerHTML
+                                ,enclosure: {
+                                    type: 
+                                        (xml.querySelector('enclosure') 
+                                        || defaultNode
+                                        ).getAttribute('type')
+                                    ,length: 
+                                        (xml.querySelector('enclosure') 
+                                        || defaultNode
+                                        ).getAttribute('length')
+                                    ,url: 
+                                        (xml.querySelector('enclosure') 
+                                        || defaultNode
+                                        ).getAttribute('url')
+                                }
+                            }
+                        })
+                }
+            
+                // eslint-disable-next-line fp/no-mutation
+                Object.assign(p, Model.Parsed({
+                    parsed: channel
+                    ,url: p.value.url 
+                    ,originalURL: p.value.url 
+                }))
+            }
+        })( n )
+    }
 
 
-
-const View = update => model =>
-    m(
+    const view = (model) => m(
         'div'
         , m('input'
             , { oninput: 
                 m.withAttr('value', function(value){
-                    update( Action.URL( value ) )
+                    write( Action.URL( value ) )
                 })
-                ,value: Feed$getEditableURL(model.feed)
+                ,value: Feed$getEditableURL(model)
             }
         )
         , m('button', {
             onclick(){
-                update( Action.FETCH() )
+                write( Action.FETCH() )
             }
         }, 'Fetch')
-        , model.feed.value.parsed
+        , model.value.parsed
         && [
-            m('a', { href: model.feed.value.parsed.link }
-                ,m('h1', model.feed.value.parsed.title)
+            m('a', { href: model.value.parsed.link }
+                ,m('h1', model.value.parsed.title)
             )
             ,m('img', { 
-                src: model.feed.value.parsed.itunesImageHref
+                src: model.value.parsed.itunesImageHref
                 ,style: { maxWidth: '100px' }
             })
-            ,m('subheading', model.feed.value.parsed.description)
-            ,model.feed.value.parsed.items.map(function(item){
+            ,m('subheading', model.value.parsed.description)
+            ,model.value.parsed.items.map(function(item){
                 return [
                     m('heading', item.title)
                     ,m('subheading', item.itunesSubtitle)
@@ -252,30 +247,73 @@ const View = update => model =>
 
                 ]
             })
-            ,m('pre', JSON.stringify(model.feed.value.parsed, null, 2))
+            ,m('pre', JSON.stringify(model.value.parsed, null, 2))
         ]
     )
 
-function Component(actions$, update, initialModel){
+
+    return {
+        effects: {
+            DOM: DOMSideEffects
+        }
+        ,update
+        ,view
+        ,init: () => 
+            Model.URL({
+                url: 'https://feeds.feedburner.com/InterceptedWithJeremyScahill'
+            })
+    }
+
+}
+
+// Create a mounting function that also runs n side effects
+function Mount(effects){
+
+    return function mount(query, actions$, Component){
+        // local notifcation channel
+        const local$ = stream()
+    
+        // component scoped to that local channel
+        const c = Component(local$, local$)
+    
+        // create the view using components init and update methods
+        const view$ = stream.scan(function(p,n){
+            // run exposed effects ( if we want to )
+            effects.forEach(function(k){
+                if(k in c.effects)
+                c.effects[k](p,n)
+            })
+            // generate the view stream
+            return c.update(p, n)
+        }, c.init(), local$)
+            .map( c.view )
+    
+        // if another component changes our model, push the message
+        // into the local stream
+        actions$.map(query( (localModel) => {
+            if( localModel != null && !equals(localModel, local$() )){
+                local$(localModel)
+            }
+            return null
+        }))
         
-    return Model(
-        DOMSideEffects
-        , initialModel
-        , actions$
-    )
-    .map( View(update) )
+        // if anything happens in our local stream
+        // broadcast it to the rest of the app, but within our model only
+        local$.map(function(localModel){
+            actions$( query( localModel ) )
+            return null
+        })
+        
+        // return the view stream
+        // to either be called as a function in a parent view
+        // or to be connected to m.render at the root of the app
+        return view$
+    }
 }
 
 const actions$ = stream()
+actions$({})
 
-Component( 
-    actions$
-    , actions$
-    ,{ 
-        feed: Feed.URL({
-            url: 'https://feeds.feedburner.com/InterceptedWithJeremyScahill'
-        })
-    }
-)
+Mount(['DOM']) ($.path(['feed']), actions$, FeedComponent)
     // eslint-disable-next-line no-undef
     .map( x => m.render(document.body, x) )
